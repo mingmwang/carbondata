@@ -25,6 +25,7 @@ import org.apache.carbondata.common.constants.LoggerAction;
 import org.apache.carbondata.common.logging.LogService;
 import org.apache.carbondata.common.logging.LogServiceFactory;
 import org.apache.carbondata.core.cache.CacheProvider;
+import org.apache.carbondata.core.constants.CarbonCommonConstants;
 import org.apache.carbondata.core.exception.InvalidConfigurationException;
 
 import static org.apache.carbondata.core.constants.CarbonCommonConstants.CARBON_CUSTOM_BLOCK_DISTRIBUTION;
@@ -36,8 +37,10 @@ import static org.apache.carbondata.core.constants.CarbonLoadOptionConstants.CAR
 import static org.apache.carbondata.core.constants.CarbonLoadOptionConstants.CARBON_OPTIONS_DATEFORMAT;
 import static org.apache.carbondata.core.constants.CarbonLoadOptionConstants.CARBON_OPTIONS_GLOBAL_SORT_PARTITIONS;
 import static org.apache.carbondata.core.constants.CarbonLoadOptionConstants.CARBON_OPTIONS_IS_EMPTY_DATA_BAD_RECORD;
+import static org.apache.carbondata.core.constants.CarbonLoadOptionConstants.CARBON_OPTIONS_SERIALIZATION_NULL_FORMAT;
 import static org.apache.carbondata.core.constants.CarbonLoadOptionConstants.CARBON_OPTIONS_SINGLE_PASS;
 import static org.apache.carbondata.core.constants.CarbonLoadOptionConstants.CARBON_OPTIONS_SORT_SCOPE;
+import static org.apache.carbondata.core.constants.CarbonLoadOptionConstants.CARBON_OPTIONS_TIMESTAMPFORMAT;
 
 /**
  * This class maintains carbon session params
@@ -65,6 +68,13 @@ public class SessionParams implements Serializable {
     return sProps.get(key);
   }
 
+  public String getProperty(String key, String defaultValue) {
+    if (!sProps.containsKey(key)) {
+      return defaultValue;
+    }
+    return sProps.get(key);
+  }
+
   /**
    * This method will be used to add a new property
    *
@@ -72,12 +82,29 @@ public class SessionParams implements Serializable {
    * @return properties value
    */
   public SessionParams addProperty(String key, String value) throws InvalidConfigurationException {
+    return addProperty(key, value, true);
+  }
+
+  /**
+   * This method will be used to add a new property
+   *
+   * @param key
+   * @return properties value
+   */
+  public SessionParams addProperty(String key, String value, Boolean doAuditing)
+      throws InvalidConfigurationException {
     boolean isValidConf = validateKeyValue(key, value);
     if (isValidConf) {
-      LOGGER.audit("The key " + key + " with value " + value + " added in the session param");
+      if (doAuditing) {
+        LOGGER.audit("The key " + key + " with value " + value + " added in the session param");
+      }
       sProps.put(key, value);
     }
     return this;
+  }
+
+  public Map<String, String> getAll() {
+    return sProps;
   }
 
   public SessionParams addProps(Map<String, String> addedProps) {
@@ -143,11 +170,32 @@ public class SessionParams implements Serializable {
       case CARBON_OPTIONS_DATEFORMAT:
         isValid = true;
         break;
+      // no validation needed while set for CARBON_OPTIONS_TIMESTAMPFORMAT
+      case CARBON_OPTIONS_TIMESTAMPFORMAT:
+        isValid = true;
+        break;
+      // no validation needed while set for CARBON_OPTIONS_SERIALIZATION_NULL_FORMAT
+      case CARBON_OPTIONS_SERIALIZATION_NULL_FORMAT:
+        isValid = true;
+        break;
       default:
-        throw new InvalidConfigurationException(
-            "The key " + key + " not supported for dynamic configuration.");
+        if (key.startsWith(CarbonCommonConstants.CARBON_INPUT_SEGMENTS)) {
+          isValid = CarbonUtil.validateRangeOfSegmentList(value);
+          if (!isValid) {
+            throw new InvalidConfigurationException("Invalid CARBON_INPUT_SEGMENT_IDs");
+          }
+        } else if (key.startsWith(CarbonCommonConstants.VALIDATE_CARBON_INPUT_SEGMENTS)) {
+          isValid = true;
+        } else {
+          throw new InvalidConfigurationException(
+              "The key " + key + " not supported for dynamic configuration.");
+        }
     }
     return isValid;
+  }
+
+  public void removeProperty(String property) {
+    sProps.remove(property);
   }
 
   /**

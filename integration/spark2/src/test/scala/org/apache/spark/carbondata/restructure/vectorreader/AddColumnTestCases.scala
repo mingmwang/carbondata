@@ -239,7 +239,7 @@ class AddColumnTestCases extends Spark2QueryTest with BeforeAndAfterAll {
 
   test("test to check if exception is thrown with wrong char syntax") {
     sqlContext.setConf("carbon.enable.vector.reader", "false")
-    intercept[Exception] {
+    try {
       sql("DROP TABLE IF EXISTS carbon_table")
       sql(
         "CREATE TABLE carbon_table(intField INT,stringField STRING,charField STRING,timestampField " +
@@ -249,6 +249,10 @@ class AddColumnTestCases extends Spark2QueryTest with BeforeAndAfterAll {
       sql(
         "ALTER TABLE carbon_table ADD COLUMNS(newfield char) TBLPROPERTIES ('DEFAULT.VALUE.newfield'='c')")
       sql("DROP TABLE IF EXISTS carbon_table")
+      assert(true)
+    }
+    catch {
+      case _ => assert(false)
     }
   }
 
@@ -268,7 +272,7 @@ class AddColumnTestCases extends Spark2QueryTest with BeforeAndAfterAll {
 
   test("test to check if exception is thrown with wrong varchar syntax") {
     sqlContext.setConf("carbon.enable.vector.reader", "false")
-    intercept[Exception] {
+    try {
       sql("DROP TABLE IF EXISTS carbon_table")
       sql(
         "CREATE TABLE carbon_table(intField INT,stringField STRING,charField STRING,timestampField " +
@@ -278,6 +282,10 @@ class AddColumnTestCases extends Spark2QueryTest with BeforeAndAfterAll {
       sql(
         "ALTER TABLE carbon_table ADD COLUMNS(newfield varchar) TBLPROPERTIES ('DEFAULT.VALUE.newfield'='c')")
       sql("DROP TABLE IF EXISTS carbon_table")
+      assert(true)
+    }
+    catch {
+      case exception:Exception => assert(false)
     }
   }
 
@@ -414,6 +422,30 @@ class AddColumnTestCases extends Spark2QueryTest with BeforeAndAfterAll {
     sql(
       "ALTER TABLE carbon_table ADD COLUMNS(newField INT) TBLPROPERTIES" +
       "('DEFAULT.VALUE.newField'='67890')")
+    checkAnswer(sql("SELECT DISTINCT(newField) FROM carbon_table"), Row(67890))
+    sql("DROP TABLE IF EXISTS carbon_table")
+  }
+
+  test("test to check if intField returns correct result - dictionary exclude") {
+    sqlContext.setConf("carbon.enable.vector.reader", "true")
+    sql("DROP TABLE IF EXISTS carbon_table")
+    sql("CREATE TABLE carbon_table(intField INT,stringField STRING,charField STRING,timestampField TIMESTAMP, decimalField DECIMAL(6,2)) STORED BY 'carbondata'")
+    sql(s"LOAD DATA LOCAL INPATH '$resourcesPath/restructure/data1.csv' INTO TABLE carbon_table OPTIONS('FILEHEADER'='intField,stringField,charField,timestampField,decimalField')")
+    sql(
+      "ALTER TABLE carbon_table ADD COLUMNS(newField INT) TBLPROPERTIES" +
+      "('DEFAULT.VALUE.newField'='67890', 'DICTIONARY_EXCLUDE'='newField')")
+    checkAnswer(sql("SELECT DISTINCT(newField) FROM carbon_table"), Row(67890))
+    sql("DROP TABLE IF EXISTS carbon_table")
+  }
+
+  test("test to check if bigintField returns correct result - dictionary exclude") {
+    sqlContext.setConf("carbon.enable.vector.reader", "true")
+    sql("DROP TABLE IF EXISTS carbon_table")
+    sql("CREATE TABLE carbon_table(intField INT,stringField STRING,charField STRING,timestampField TIMESTAMP, decimalField DECIMAL(6,2)) STORED BY 'carbondata'")
+    sql(s"LOAD DATA LOCAL INPATH '$resourcesPath/restructure/data1.csv' INTO TABLE carbon_table OPTIONS('FILEHEADER'='intField,stringField,charField,timestampField,decimalField')")
+    sql(
+      "ALTER TABLE carbon_table ADD COLUMNS(newField bigint) TBLPROPERTIES" +
+      "('DEFAULT.VALUE.newField'='67890', 'DICTIONARY_EXCLUDE'='newField')")
     checkAnswer(sql("SELECT DISTINCT(newField) FROM carbon_table"), Row(67890))
     sql("DROP TABLE IF EXISTS carbon_table")
   }
@@ -596,6 +628,34 @@ class AddColumnTestCases extends Spark2QueryTest with BeforeAndAfterAll {
 
   }
 
+  test("no inverted index after alter command") {
+    sql("drop table if exists NO_INVERTED_CARBON")
+    sql(
+      """
+           CREATE TABLE IF NOT EXISTS NO_INVERTED_CARBON
+           (id Int, name String, city String)
+           STORED BY 'org.apache.carbondata.format'
+           TBLPROPERTIES('NO_INVERTED_INDEX'='city')
+      """)
+
+    sql("alter table NO_INVERTED_CARBON add columns(col1 string,col2 string) tblproperties('NO_INVERTED_INDEX'='col2')")
+    checkExistenceCount(sql("desc formatted NO_INVERTED_CARBON"),2,"NOINVERTEDINDEX")
+  }
+
+  test("test if adding column in pre-aggregate table throws exception") {
+    sql("drop table if exists preaggMain")
+    sql("drop table if exists preagg1")
+    sql("create table preaggMain (a string, b string, c string) stored by 'carbondata'")
+    sql(
+      "create datamap preagg1 on table PreAggMain using 'preaggregate' as select" +
+      " a,sum(b) from PreAggMain group by a")
+    assert(intercept[RuntimeException] {
+      sql("alter table preaggmain_preagg1 add columns(d string)")
+    }.getMessage.contains("Cannot add columns"))
+    sql("drop table if exists preaggMain")
+    sql("drop table if exists preagg1")
+  }
+
   override def afterAll {
     sql("DROP TABLE IF EXISTS addcolumntest")
     sql("DROP TABLE IF EXISTS hivetable")
@@ -609,6 +669,7 @@ class AddColumnTestCases extends Spark2QueryTest with BeforeAndAfterAll {
     sql("DROP TABLE IF EXISTS alter_dict")
     sql("DROP TABLE IF EXISTS alter_sort_columns")
     sql("DROP TABLE IF EXISTS alter_no_dict")
+    sql("drop table if exists NO_INVERTED_CARBON")
     sqlContext.setConf("carbon.enable.vector.reader", "false")
     CarbonProperties.getInstance().addProperty(CarbonCommonConstants.CARBON_TIMESTAMP_FORMAT,
       CarbonCommonConstants.CARBON_TIMESTAMP_DEFAULT_FORMAT)

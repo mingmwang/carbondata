@@ -24,6 +24,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 import org.apache.carbondata.core.metadata.AbsoluteTableIdentifier;
+import org.apache.carbondata.core.statusmanager.FileFormat;
 
 import org.apache.hadoop.io.Writable;
 import org.apache.hadoop.mapreduce.InputSplit;
@@ -44,15 +45,29 @@ public class CarbonMultiBlockSplit extends InputSplit implements Writable {
    */
   private String[] locations;
 
+  private FileFormat fileFormat = FileFormat.COLUMNAR_V3;
+
+  private long length;
+
   public CarbonMultiBlockSplit() {
     splitList = null;
     locations = null;
+    length = 0;
   }
 
   public CarbonMultiBlockSplit(AbsoluteTableIdentifier identifier, List<CarbonInputSplit> splitList,
       String[] locations) throws IOException {
     this.splitList = splitList;
     this.locations = locations;
+    calculateLength();
+  }
+
+  public CarbonMultiBlockSplit(AbsoluteTableIdentifier identifier, List<CarbonInputSplit> splitList,
+      String[] locations, FileFormat fileFormat) throws IOException {
+    this.splitList = splitList;
+    this.locations = locations;
+    this.fileFormat = fileFormat;
+    calculateLength();
   }
 
   /**
@@ -65,11 +80,19 @@ public class CarbonMultiBlockSplit extends InputSplit implements Writable {
 
   @Override
   public long getLength() throws IOException, InterruptedException {
+    return length;
+  }
+
+  public void setLength(long length) {
+    this.length = length;
+  }
+
+  private void calculateLength() {
     long total = 0;
-    for (InputSplit split: splitList) {
+    for (CarbonInputSplit split : splitList) {
       total += split.getLength();
     }
-    return total;
+    length = total;
   }
 
   @Override
@@ -88,6 +111,7 @@ public class CarbonMultiBlockSplit extends InputSplit implements Writable {
     for (int i = 0; i < locations.length; i++) {
       out.writeUTF(locations[i]);
     }
+    out.writeInt(fileFormat.ordinal());
   }
 
   @Override
@@ -105,6 +129,14 @@ public class CarbonMultiBlockSplit extends InputSplit implements Writable {
     for (int i = 0; i < len; i++) {
       locations[i] = in.readUTF();
     }
+    fileFormat = FileFormat.getByOrdinal(in.readInt());
   }
 
+  public FileFormat getFileFormat() {
+    return fileFormat;
+  }
+
+  public void setFileFormat(FileFormat fileFormat) {
+    this.fileFormat = fileFormat;
+  }
 }

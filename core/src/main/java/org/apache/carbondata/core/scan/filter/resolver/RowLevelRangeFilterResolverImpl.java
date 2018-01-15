@@ -28,6 +28,7 @@ import org.apache.carbondata.core.datastore.block.SegmentProperties;
 import org.apache.carbondata.core.keygenerator.directdictionary.DirectDictionaryGenerator;
 import org.apache.carbondata.core.keygenerator.directdictionary.DirectDictionaryKeyGeneratorFactory;
 import org.apache.carbondata.core.metadata.AbsoluteTableIdentifier;
+import org.apache.carbondata.core.metadata.datatype.DataTypes;
 import org.apache.carbondata.core.metadata.encoder.Encoding;
 import org.apache.carbondata.core.metadata.schema.table.column.CarbonDimension;
 import org.apache.carbondata.core.metadata.schema.table.column.CarbonMeasure;
@@ -45,6 +46,7 @@ import org.apache.carbondata.core.scan.filter.intf.FilterExecuterType;
 import org.apache.carbondata.core.scan.filter.resolver.resolverinfo.DimColumnResolvedFilterInfo;
 import org.apache.carbondata.core.scan.filter.resolver.resolverinfo.MeasureColumnResolvedFilterInfo;
 import org.apache.carbondata.core.util.ByteUtil;
+import org.apache.carbondata.core.util.CarbonProperties;
 import org.apache.carbondata.core.util.DataTypeUtil;
 
 public class RowLevelRangeFilterResolverImpl extends ConditionalFilterResolverImpl {
@@ -88,7 +90,7 @@ public class RowLevelRangeFilterResolverImpl extends ConditionalFilterResolverIm
           .getDimensionFromCurrentBlock(this.dimColEvaluatorInfoList.get(0).getDimension());
       if (null != dimensionFromCurrentBlock) {
         return FilterUtil.getKeyArray(this.dimColEvaluatorInfoList.get(0).getFilterValues(),
-            dimensionFromCurrentBlock, segmentProperties);
+            dimensionFromCurrentBlock, segmentProperties, false);
       }
     }
     return null;
@@ -159,15 +161,22 @@ public class RowLevelRangeFilterResolverImpl extends ConditionalFilterResolverIm
     }
     List<byte[]> filterValuesList = new ArrayList<byte[]>(20);
     boolean invalidRowsPresent = false;
+    String timeFormat = CarbonProperties.getInstance()
+        .getProperty(CarbonCommonConstants.CARBON_TIMESTAMP_FORMAT,
+            CarbonCommonConstants.CARBON_TIMESTAMP_DEFAULT_FORMAT);
     for (ExpressionResult result : listOfExpressionResults) {
       try {
         if (result.getString() == null) {
-          filterValuesList.add(CarbonCommonConstants.MEMBER_DEFAULT_VAL_ARRAY);
+          if (result.getDataType() == DataTypes.STRING) {
+            filterValuesList.add(CarbonCommonConstants.MEMBER_DEFAULT_VAL_ARRAY);
+          } else {
+            filterValuesList.add(CarbonCommonConstants.EMPTY_BYTE_ARRAY);
+          }
           continue;
         }
         filterValuesList.add(DataTypeUtil
-            .getBytesBasedOnDataTypeForNoDictionaryColumn(result.getString(),
-                result.getDataType()));
+            .getBytesBasedOnDataTypeForNoDictionaryColumn(result.getString(), result.getDataType(),
+                timeFormat));
       } catch (FilterIllegalMemberException e) {
         // Any invalid member while evaluation shall be ignored, system will log the
         // error only once since all rows the evaluation happens so inorder to avoid
@@ -234,7 +243,11 @@ public class RowLevelRangeFilterResolverImpl extends ConditionalFilterResolverIm
           dimColumnEvaluatorInfo.setDimension(columnExpression.getDimension());
           dimColumnEvaluatorInfo.setDimensionExistsInCurrentSilce(false);
           if (columnExpression.getDimension().hasEncoding(Encoding.DIRECT_DICTIONARY)) {
-            filterInfo.setFilterList(getDirectSurrogateValues(columnExpression));
+            if (!isIncludeFilter) {
+              filterInfo.setExcludeFilterList(getDirectSurrogateValues(columnExpression));
+            } else {
+              filterInfo.setFilterList(getDirectSurrogateValues(columnExpression));
+            }
           } else {
             filterInfo.setFilterListForNoDictionaryCols(getNoDictionaryRangeValues());
           }

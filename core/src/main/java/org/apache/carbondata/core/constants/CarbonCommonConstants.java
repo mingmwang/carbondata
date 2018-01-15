@@ -23,6 +23,10 @@ import org.apache.carbondata.core.util.CarbonProperty;
 
 public final class CarbonCommonConstants {
   /**
+   * surrogate value of null
+   */
+  public static final int DICT_VALUE_NULL = 1;
+  /**
    * integer size in bytes
    */
   public static final int INT_SIZE_IN_BYTE = 4;
@@ -50,6 +54,24 @@ public final class CarbonCommonConstants {
    * measure meta data file name
    */
   public static final String MEASURE_METADATA_FILE_NAME = "/msrMetaData_";
+
+  /**
+   * set the segment ids to query from the table
+   */
+  public static final String CARBON_INPUT_SEGMENTS = "carbon.input.segments.";
+
+  /**
+   * Fetch and validate the segments.
+   * Used for aggregate table load as segment validation is not required.
+   */
+  public static final String VALIDATE_CARBON_INPUT_SEGMENTS = "validate.carbon.input.segments.";
+
+  /**
+   * Whether load/insert command is fired internally or by the user.
+   * Used to block load/insert on pre-aggregate if fired by user
+   */
+  public static final String IS_INTERNAL_LOAD_CALL = "is.internal.load.call";
+
   /**
    * location of the carbon member, hierarchy and fact files
    */
@@ -131,19 +153,21 @@ public final class CarbonCommonConstants {
    * Load Folder Name
    */
   public static final String LOAD_FOLDER = "Segment_";
-  /**
-   * HDFSURL_PREFIX
-   */
+
   public static final String HDFSURL_PREFIX = "hdfs://";
-  /**
-   * VIEWFSURL_PREFIX
-   */
+
+  public static final String LOCAL_FILE_PREFIX = "file://";
+
   public static final String VIEWFSURL_PREFIX = "viewfs://";
 
-  /**
-   * ALLUXIO_PREFIX
-   */
   public static final String ALLUXIOURL_PREFIX = "alluxio://";
+
+  public static final String S3_PREFIX = "s3://";
+
+  public static final String S3N_PREFIX = "s3n://";
+
+  public static final String S3A_PREFIX = "s3a://";
+
   /**
    * FS_DEFAULT_FS
    */
@@ -190,6 +214,12 @@ public final class CarbonCommonConstants {
    * Bytes for string 0, it is used in codegen in case of null values.
    */
   public static final byte[] ZERO_BYTE_ARRAY = "0".getBytes(Charset.forName(DEFAULT_CHARSET));
+
+  /**
+   * Empty byte array
+   */
+  public static final byte[] EMPTY_BYTE_ARRAY = new byte[0];
+
   /**
    * FILE STATUS IN-PROGRESS
    */
@@ -267,6 +297,10 @@ public final class CarbonCommonConstants {
    * SORT_INTERMEDIATE_FILES_LIMIT_DEFAULT_VALUE
    */
   public static final String SORT_INTERMEDIATE_FILES_LIMIT_DEFAULT_VALUE = "20";
+
+  public static final int SORT_INTERMEDIATE_FILES_LIMIT_MIN = 2;
+
+  public static final int SORT_INTERMEDIATE_FILES_LIMIT_MAX = 50;
   /**
    * BAD_RECORD_KEY_VALUE
    */
@@ -295,6 +329,8 @@ public final class CarbonCommonConstants {
   @CarbonProperty
   public static final String CARBON_SORT_FILE_WRITE_BUFFER_SIZE =
       "carbon.sort.file.write.buffer.size";
+  public static final int CARBON_SORT_FILE_WRITE_BUFFER_SIZE_MIN = 10240;
+  public static final int CARBON_SORT_FILE_WRITE_BUFFER_SIZE_MAX = 10485760;
   /**
    * SORT_FILE_WRITE_BUFFER_SIZE_DEFAULT_VALUE
    */
@@ -400,26 +436,6 @@ public final class CarbonCommonConstants {
    */
   public static final String CARBON_MERGE_SORT_READER_THREAD_DEFAULTVALUE = "3";
   /**
-   * IS_SORT_TEMP_FILE_COMPRESSION_ENABLED
-   */
-  @CarbonProperty
-  public static final String IS_SORT_TEMP_FILE_COMPRESSION_ENABLED =
-      "carbon.is.sort.temp.file.compression.enabled";
-  /**
-   * IS_SORT_TEMP_FILE_COMPRESSION_ENABLED_DEFAULTVALUE
-   */
-  public static final String IS_SORT_TEMP_FILE_COMPRESSION_ENABLED_DEFAULTVALUE = "false";
-  /**
-   * SORT_TEMP_FILE_NO_OF_RECORDS_FOR_COMPRESSION
-   */
-  @CarbonProperty
-  public static final String SORT_TEMP_FILE_NO_OF_RECORDS_FOR_COMPRESSION =
-      "carbon.sort.temp.file.no.of.records.for.compression";
-  /**
-   * SORT_TEMP_FILE_NO_OF_RECORD_FOR_COMPRESSION_DEFAULTVALUE
-   */
-  public static final String SORT_TEMP_FILE_NO_OF_RECORD_FOR_COMPRESSION_DEFAULTVALUE = "50";
-  /**
    * DEFAULT_COLLECTION_SIZE
    */
   public static final int DEFAULT_COLLECTION_SIZE = 16;
@@ -494,15 +510,6 @@ public final class CarbonCommonConstants {
    */
   public static final String ENABLE_DATA_LOADING_STATISTICS_DEFAULT = "false";
   /**
-   * IS_INT_BASED_INDEXER
-   */
-  @CarbonProperty
-  public static final String HIGH_CARDINALITY_VALUE = "high.cardinality.value";
-  /**
-   * IS_INT_BASED_INDEXER_DEFAULTVALUE
-   */
-  public static final String HIGH_CARDINALITY_VALUE_DEFAULTVALUE = "100000";
-  /**
    * CONSTANT_SIZE_TEN
    */
   public static final int CONSTANT_SIZE_TEN = 10;
@@ -510,30 +517,7 @@ public final class CarbonCommonConstants {
    * LEVEL_METADATA_FILE
    */
   public static final String LEVEL_METADATA_FILE = "levelmetadata_";
-  /**
-   * LOAD_STATUS SUCCESS
-   */
-  public static final String STORE_LOADSTATUS_SUCCESS = "Success";
-  /**
-   * LOAD_STATUS UPDATE
-   */
-  public static final String STORE_LOADSTATUS_UPDATE = "Update";
-  /**
-   * LOAD_STATUS FAILURE
-   */
-  public static final String STORE_LOADSTATUS_FAILURE = "Failure";
-  /**
-   * LOAD_STATUS PARTIAL_SUCCESS
-   */
-  public static final String STORE_LOADSTATUS_PARTIAL_SUCCESS = "Partial Success";
-  /**
-   * LOAD_STATUS
-   */
-  public static final String CARBON_METADATA_EXTENSION = ".metadata";
-  /**
-   * LOAD_STATUS
-   */
-  public static final String CARBON_DEFAULT_STREAM_ENCODEFORMAT = "UTF-8";
+
   /**
    * COMMA
    */
@@ -573,25 +557,53 @@ public final class CarbonCommonConstants {
    */
   public static final String CARBON_TIMESTAMP_MILLIS = "dd-MM-yyyy HH:mm:ss:SSS";
   /**
-   * NUMBER_OF_TRIES_FOR_LOAD_METADATA_LOCK
+   * NUMBER_OF_TRIES_FOR_LOAD_METADATA_LOCK.
+   *
+   * Because we want concurrent loads to be completed even if they have to wait for the lock
+   * therefore taking the default as 100.
+   *
+   * Example: Concurrent loads will use this to wait to acquire the table status lock.
    */
-  public static final int NUMBER_OF_TRIES_FOR_LOAD_METADATA_LOCK_DEFAULT = 3;
+  public static final int NUMBER_OF_TRIES_FOR_CONCURRENT_LOCK_DEFAULT = 100;
   /**
    * MAX_TIMEOUT_FOR_LOAD_METADATA_LOCK
+   *
+   * * Example: Concurrent loads will use this to wait to acquire the table status lock.
    */
-  public static final int MAX_TIMEOUT_FOR_LOAD_METADATA_LOCK_DEFAULT = 5;
+  public static final int MAX_TIMEOUT_FOR_CONCURRENT_LOCK_DEFAULT = 1;
   /**
    * NUMBER_OF_TRIES_FOR_LOAD_METADATA_LOCK
    */
   @CarbonProperty
-  public static final String NUMBER_OF_TRIES_FOR_LOAD_METADATA_LOCK =
-      "carbon.load.metadata.lock.retries";
+  public static final String NUMBER_OF_TRIES_FOR_CONCURRENT_LOCK =
+      "carbon.concurrent.lock.retries";
   /**
    * MAX_TIMEOUT_FOR_LOAD_METADATA_LOCK
    */
   @CarbonProperty
-  public static final String MAX_TIMEOUT_FOR_LOAD_METADATA_LOCK =
-      "carbon.load.metadata.lock.retry.timeout.sec";
+  public static final String MAX_TIMEOUT_FOR_CONCURRENT_LOCK =
+      "carbon.concurrent.lock.retry.timeout.sec";
+
+  /**
+   * NUMBER_OF_TRIES_FOR_CARBON_LOCK
+   */
+  public static final int NUMBER_OF_TRIES_FOR_CARBON_LOCK_DEFAULT = 3;
+  /**
+   * MAX_TIMEOUT_FOR_CARBON_LOCK
+   */
+  public static final int MAX_TIMEOUT_FOR_CARBON_LOCK_DEFAULT = 5;
+  /**
+   * NUMBER_OF_TRIES_FOR_CARBON_LOCK
+   */
+  @CarbonProperty
+  public static final String NUMBER_OF_TRIES_FOR_CARBON_LOCK =
+      "carbon.lock.retries";
+  /**
+   * MAX_TIMEOUT_FOR_CARBON_LOCK
+   */
+  @CarbonProperty
+  public static final String MAX_TIMEOUT_FOR_CARBON_LOCK =
+      "carbon.lock.retry.timeout.sec";
 
   /**
    * compressor for writing/reading carbondata file
@@ -604,11 +616,6 @@ public final class CarbonCommonConstants {
    */
   public static final String DEFAULT_COMPRESSOR = "snappy";
 
-  /**
-   * MARKED_FOR_DELETION
-   */
-  public static final String MARKED_FOR_DELETE = "Marked for Delete";
-  public static final String MARKED_FOR_UPDATE = "Marked for Update";
   public static final String STRING_TYPE = "StringType";
   public static final String INTEGER_TYPE = "IntegerType";
   public static final String LONG_TYPE = "LongType";
@@ -626,8 +633,8 @@ public final class CarbonCommonConstants {
   public static final String SHORT = "Short";
   public static final String NUMERIC = "Numeric";
   public static final String TIMESTAMP = "Timestamp";
-  public static final String ARRAY = "ARRAY";
-  public static final String STRUCT = "STRUCT";
+  public static final String ARRAY = "array";
+  public static final String STRUCT = "struct";
   public static final String FROM = "from";
   /**
    * FACT_UPDATE_EXTENSION.
@@ -690,22 +697,7 @@ public final class CarbonCommonConstants {
    * max lru cache size default value in MB
    */
   public static final String CARBON_MAX_LRU_CACHE_SIZE_DEFAULT = "-1";
-  /**
-   * DOUBLE_VALUE_MEASURE
-   */
-  public static final char DOUBLE_MEASURE = 'n';
-  /**
-   * BYTE_VALUE_MEASURE
-   */
-  public static final char BYTE_VALUE_MEASURE = 'c';
-  /**
-   * BIG_DECIMAL_MEASURE
-   */
-  public static final char BIG_DECIMAL_MEASURE = 'b';
-  /**
-   * BIG_INT_MEASURE
-   */
-  public static final char BIG_INT_MEASURE = 'd';
+
   /**
    * CARBON_PREFETCH_BUFFERSIZE
    */
@@ -803,15 +795,20 @@ public final class CarbonCommonConstants {
   public static final String INVALID_SEGMENT_ID = "-1";
 
   /**
+   * default load time of the segment
+   */
+  public static final long SEGMENT_LOAD_TIME_DEFAULT = -1;
+
+  /**
    * Size of Major Compaction in MBs
    */
   @CarbonProperty
-  public static final String MAJOR_COMPACTION_SIZE = "carbon.major.compaction.size";
+  public static final String CARBON_MAJOR_COMPACTION_SIZE = "carbon.major.compaction.size";
 
   /**
    * By default size of major compaction in MBs.
    */
-  public static final String DEFAULT_MAJOR_COMPACTION_SIZE = "1024";
+  public static final String DEFAULT_CARBON_MAJOR_COMPACTION_SIZE = "1024";
 
   /**
    * This property is used to tell how many segments to be preserved from merging.
@@ -876,6 +873,10 @@ public final class CarbonCommonConstants {
   public static final String COLUMN_GROUPS = "column_groups";
   public static final String DICTIONARY_EXCLUDE = "dictionary_exclude";
   public static final String DICTIONARY_INCLUDE = "dictionary_include";
+  /**
+   * key for dictionary path
+   */
+  public static final String DICTIONARY_PATH = "dictionary_path";
   public static final String SORT_COLUMNS = "sort_columns";
   public static final String PARTITION_TYPE = "partition_type";
   public static final String NUM_PARTITIONS = "num_partitions";
@@ -886,6 +887,16 @@ public final class CarbonCommonConstants {
   public static final String TABLE_BLOCKSIZE = "table_blocksize";
   // set in column level to disable inverted index
   public static final String NO_INVERTED_INDEX = "no_inverted_index";
+  // table property name of major compaction size
+  public static final String TABLE_MAJOR_COMPACTION_SIZE = "major_compaction_size";
+  // table property name of auto load merge
+  public static final String TABLE_AUTO_LOAD_MERGE = "auto_load_merge";
+  // table property name of compaction level threshold
+  public static final String TABLE_COMPACTION_LEVEL_THRESHOLD = "compaction_level_threshold";
+  // table property name of preserve segments numbers while compaction
+  public static final String TABLE_COMPACTION_PRESERVE_SEGMENTS = "compaction_preserve_segments";
+  // table property name of allowed compaction days while compaction
+  public static final String TABLE_ALLOWED_COMPACTION_DAYS = "allowed_compaction_days";
 
   /**
    * 16 mb size
@@ -895,11 +906,6 @@ public final class CarbonCommonConstants {
    * 256 mb size
    */
   public static final long CARBON_256MB = 256 * 1024 * 1024;
-
-  /**
-   * COMPACTED is property to indicate whether seg is compacted or not.
-   */
-  public static final String COMPACTED = "Compacted";
 
   /**
    * ZOOKEEPERLOCK TYPE
@@ -1040,7 +1046,7 @@ public final class CarbonCommonConstants {
   public static final String CARBON_DATA_FILE_VERSION = "carbon.data.file.version";
 
   /**
-   * property to set is IS_DRIVER_INSTANCE
+   * Index file name will end with this extension when update.
    */
   public static final String UPDATE_INDEX_FILE_EXT = ".carbonindex";
 
@@ -1291,10 +1297,13 @@ public final class CarbonCommonConstants {
 
   public static final String MAJOR = "major";
 
-  public static final String LOCAL_FILE_PREFIX = "file://";
   @CarbonProperty
   public static final String CARBON_CUSTOM_BLOCK_DISTRIBUTION = "carbon.custom.block.distribution";
   public static final String CARBON_CUSTOM_BLOCK_DISTRIBUTION_DEFAULT = "false";
+
+  @CarbonProperty
+  public static final String CARBON_COMBINE_SMALL_INPUT_FILES = "carbon.mergeSmallFileRead.enable";
+  public static final String CARBON_COMBINE_SMALL_INPUT_FILES_DEFAULT = "false";
 
   public static final int DICTIONARY_DEFAULT_CARDINALITY = 1;
   @CarbonProperty
@@ -1302,10 +1311,14 @@ public final class CarbonCommonConstants {
       "spark.sql.sources.schemaStringLengthThreshold";
 
   public static final int SPARK_SCHEMA_STRING_LENGTH_THRESHOLD_DEFAULT = 4000;
+
   @CarbonProperty
   public static final String CARBON_BAD_RECORDS_ACTION = "carbon.bad.records.action";
 
-  public static final String CARBON_BAD_RECORDS_ACTION_DEFAULT = "FORCE";
+  /**
+   * FAIL action will fail the load in case of bad records in loading data
+   */
+  public static final String CARBON_BAD_RECORDS_ACTION_DEFAULT = "FAIL";
 
   public static final String ENABLE_HIVE_SCHEMA_META_STORE = "spark.carbon.hive.schema.store";
 
@@ -1317,7 +1330,9 @@ public final class CarbonCommonConstants {
    */
   public static final String DATA_MANAGEMENT_DRIVER = "spark.carbon.datamanagement.driver";
 
-  public static final String DATA_MANAGEMENT_DRIVER_DEFAULT = "false";
+  public static final String DATA_MANAGEMENT_DRIVER_DEFAULT = "true";
+
+  public static final String CARBON_SESSIONSTATE_CLASSNAME = "spark.carbon.sessionstate.classname";
 
   @CarbonProperty
   public static final String CARBON_LEASE_RECOVERY_RETRY_COUNT =
@@ -1325,6 +1340,12 @@ public final class CarbonCommonConstants {
   @CarbonProperty
   public static final String CARBON_LEASE_RECOVERY_RETRY_INTERVAL =
       "carbon.lease.recovery.retry.interval";
+
+  @CarbonProperty
+  public static final String CARBON_SECURE_DICTIONARY_SERVER =
+      "carbon.secure.dictionary.server";
+
+  public static final String CARBON_SECURE_DICTIONARY_SERVER_DEFAULT = "true";
 
   /**
    * whether to use multi directories when loading data,
@@ -1338,6 +1359,17 @@ public final class CarbonCommonConstants {
    */
   public static final String CARBON_USE_MULTI_TEMP_DIR_DEFAULT = "false";
 
+  /**
+   * name of compressor to compress sort temp files
+   */
+  @CarbonProperty
+  public static final String CARBON_SORT_TEMP_COMPRESSOR = "carbon.sort.temp.compressor";
+
+  /**
+   * The optional values are 'SNAPPY','GZIP','BZIP2','LZ4'.
+   * By default, empty means that Carbondata will not compress the sort temp files.
+   */
+  public static final String CARBON_SORT_TEMP_COMPRESSOR_DEFAULT = "";
   /**
    * Which storage level to persist rdd when sort_scope=global_sort
    */
@@ -1375,6 +1407,116 @@ public final class CarbonCommonConstants {
   public static final String CARBON_USE_BLOCKLET_DISTRIBUTION = "carbon.blocklet.distribution";
 
   public static final String CARBON_USE_BLOCKLET_DISTRIBUTION_DEFAULT = "true";
+  /**
+   * The property to configure the mdt file folder path, earlier it was pointing to the
+   * fixed carbon store path. This is needed in case of the federation setup when user removes
+   * the fixedtorepath namesevice
+   */
+  @CarbonProperty
+  public static final String CARBON_UPDATE_SYNC_FOLDER = "carbon.update.sync.folder";
+
+  public static final String CARBON_UPDATE_SYNC_FOLDER_DEFAULT = "/tmp/carbondata";
+
+  /**
+   * this will be used to pass bitset value in filter to another filter for
+   * faster execution of filter query
+   */
+  @CarbonProperty
+  public static final String BITSET_PIPE_LINE = "carbon.use.bitset.pipe.line";
+
+  /**
+   * this will be used to provide comment for table
+   */
+  public static final String TABLE_COMMENT = "comment";
+
+  /**
+   * this will be used to provide comment for table
+   */
+  public static final String COLUMN_COMMENT = "comment";
+
+  public static final String BITSET_PIPE_LINE_DEFAULT = "true";
+
+  /**
+   * It is internal configuration and used only for test purpose.
+   * It will merge the carbon index files with in the segment to single segment.
+   */
+  public static final String CARBON_MERGE_INDEX_IN_SEGMENT = "carbon.merge.index.in.segment";
+
+  public static final String CARBON_MERGE_INDEX_IN_SEGMENT_DEFAULT = "true";
+
+  public static final String AGGREGATIONDATAMAPSCHEMA = "AggregateDataMapHandler";
+  /*
+   * The total size of carbon data
+   */
+  public static final String CARBON_TOTAL_DATA_SIZE = "datasize";
+
+  /**
+   * The total size of carbon index
+   */
+  public static final String CARBON_TOTAL_INDEX_SIZE = "indexsize";
+
+  /**
+   * ENABLE_CALCULATE_DATA_INDEX_SIZE
+   */
+  @CarbonProperty public static final String ENABLE_CALCULATE_SIZE = "carbon.enable.calculate.size";
+
+  /**
+   * DEFAULT_ENABLE_CALCULATE_DATA_INDEX_SIZE
+   */
+  @CarbonProperty public static final String DEFAULT_ENABLE_CALCULATE_SIZE = "true";
+
+  public static final String TABLE_DATA_SIZE = "Table Data Size";
+
+  public static final String TABLE_INDEX_SIZE = "Table Index Size";
+
+  public static final String LAST_UPDATE_TIME = "Last Update Time";
+
+  /**
+   * this will be used to skip / ignore empty lines while loading
+   */
+  @CarbonProperty public static final String CARBON_SKIP_EMPTY_LINE = "carbon.skip.empty.line";
+
+  public static final String CARBON_SKIP_EMPTY_LINE_DEFAULT = "false";
+
+  /**
+   * if the byte size of streaming segment reach this value,
+   * the system will create a new stream segment
+   */
+  public static final String HANDOFF_SIZE = "carbon.streaming.segment.max.size";
+
+  /**
+   * enable auto handoff streaming segment
+   */
+  public static final String ENABLE_AUTO_HANDOFF = "carbon.streaming.auto.handoff.enabled";
+
+  public static final String ENABLE_AUTO_HANDOFF_DEFAULT = "true";
+
+  /**
+   * the min handoff size of streaming segment, the unit is byte
+   */
+  public static final long HANDOFF_SIZE_MIN = 1024L * 1024 * 64;
+
+  /**
+   * the default handoff size of streaming segment, the unit is byte
+   */
+  public static final long HANDOFF_SIZE_DEFAULT = 1024L * 1024 * 1024;
+
+  public static final String TIMESERIES_EVENTTIME = "timeseries.eventtime";
+
+  public static final String TIMESERIES_HIERARCHY = "timeseries.hierarchy";
+
+  /**
+   * It allows queries on hive metastore directly along with filter information, otherwise first
+   * fetches all partitions from hive and apply filters on it.
+   */
+  @CarbonProperty
+  public static final String CARBON_READ_PARTITION_HIVE_DIRECT =
+      "carbon.read.partition.hive.direct";
+  public static final String CARBON_READ_PARTITION_HIVE_DIRECT_DEFAULT = "true";
+
+  // As Short data type is used for storing the length of a column during data processing hence
+  // the maximum characters that can be supported should be less than Short max value
+  public static final int MAX_CHARS_PER_COLUMN_DEFAULT = 32000;
 
   private CarbonCommonConstants() {
   }

@@ -19,12 +19,14 @@ package org.apache.spark.sql
 
 import org.apache.hadoop.fs.Path
 import org.apache.hadoop.io.compress.GzipCodec
-import org.apache.spark.sql.execution.command.LoadTable
+import org.apache.spark.sql.execution.command.management.CarbonLoadDataCommand
 import org.apache.spark.sql.types._
+import org.apache.spark.sql.util.CarbonException
 
 import org.apache.carbondata.common.logging.LogServiceFactory
 import org.apache.carbondata.core.constants.CarbonCommonConstants
-import org.apache.carbondata.core.metadata.datatype.{DataType => CarbonType}
+import org.apache.carbondata.core.metadata.datatype.{DataTypes => CarbonType}
+import org.apache.carbondata.core.util.CarbonProperties
 import org.apache.carbondata.spark.CarbonOption
 
 class CarbonDataFrameWriter(sqlContext: SQLContext, val dataFrame: DataFrame) {
@@ -58,12 +60,16 @@ class CarbonDataFrameWriter(sqlContext: SQLContext, val dataFrame: DataFrame) {
    */
   private def loadTempCSV(options: CarbonOption): Unit = {
     // temporary solution: write to csv file, then load the csv into carbon
-    val storePath = CarbonEnv.getInstance(sqlContext.sparkSession).storePath
+    val storePath = CarbonProperties.getStorePath
     val tempCSVFolder = new StringBuilder(storePath).append(CarbonCommonConstants.FILE_SEPARATOR)
       .append("tempCSV")
-      .append(CarbonCommonConstants.UNDERSCORE).append(options.dbName)
-      .append(CarbonCommonConstants.UNDERSCORE).append(options.tableName)
-      .append(CarbonCommonConstants.UNDERSCORE).append(System.nanoTime()).toString
+      .append(CarbonCommonConstants.UNDERSCORE)
+      .append(CarbonEnv.getDatabaseName(options.dbName)(sqlContext.sparkSession))
+      .append(CarbonCommonConstants.UNDERSCORE)
+      .append(options.tableName)
+      .append(CarbonCommonConstants.UNDERSCORE)
+      .append(System.nanoTime())
+      .toString
     writeToTempCSVFile(tempCSVFolder, options)
 
     val tempCSVPath = new Path(tempCSVFolder)
@@ -130,8 +136,8 @@ class CarbonDataFrameWriter(sqlContext: SQLContext, val dataFrame: DataFrame) {
    */
   private def loadDataFrame(options: CarbonOption): Unit = {
     val header = dataFrame.columns.mkString(",")
-    LoadTable(
-      Some(options.dbName),
+    CarbonLoadDataCommand(
+      Some(CarbonEnv.getDatabaseName(options.dbName)(sqlContext.sparkSession)),
       options.tableName,
       null,
       Seq(),
@@ -151,9 +157,9 @@ class CarbonDataFrameWriter(sqlContext: SQLContext, val dataFrame: DataFrame) {
       case DoubleType => CarbonType.DOUBLE.getName
       case TimestampType => CarbonType.TIMESTAMP.getName
       case DateType => CarbonType.DATE.getName
-      case decimal: DecimalType => s"${CarbonType.DECIMAL.getName} (${decimal.precision}" +
-                                   s", ${decimal.scale})"
-      case other => sys.error(s"unsupported type: $other")
+      case decimal: DecimalType => s"decimal(${decimal.precision}, ${decimal.scale})"
+      case BooleanType => CarbonType.BOOLEAN.getName
+      case other => CarbonException.analysisException(s"unsupported type: $other")
     }
   }
 
@@ -162,22 +168,26 @@ class CarbonDataFrameWriter(sqlContext: SQLContext, val dataFrame: DataFrame) {
       s"${ field.name } ${ convertToCarbonType(field.dataType) }"
     }
     val property = Map(
+      "SORT_COLUMNS" -> options.sortColumns,
       "DICTIONARY_INCLUDE" -> options.dictionaryInclude,
       "DICTIONARY_EXCLUDE" -> options.dictionaryExclude,
       "TABLE_BLOCKSIZE" -> options.tableBlockSize
     ).filter(_._2.isDefined).map(p => s"'${p._1}' = '${p._2.get}'").mkString(",")
+    val dbName = CarbonEnv.getDatabaseName(options.dbName)(sqlContext.sparkSession)
     s"""
-       | CREATE TABLE IF NOT EXISTS ${options.dbName}.${options.tableName}
+       | CREATE TABLE IF NOT EXISTS $dbName.${options.tableName}
        | (${ carbonSchema.mkString(", ") })
        | STORED BY 'carbondata'
        | ${ if (property.nonEmpty) "TBLPROPERTIES (" + property + ")" else "" }
+       | ${ if (options.tablePath.nonEmpty) s"LOCATION '${options.tablePath.get}'" else ""}
      """.stripMargin
   }
 
   private def makeLoadString(csvFolder: String, options: CarbonOption): String = {
+    val dbName = CarbonEnv.getDatabaseName(options.dbName)(sqlContext.sparkSession)
     s"""
        | LOAD DATA INPATH '$csvFolder'
-       | INTO TABLE ${options.dbName}.${options.tableName}
+       | INTO TABLE $dbName.${options.tableName}
        | OPTIONS ('FILEHEADER' = '${dataFrame.columns.mkString(",")}',
        | 'SINGLE_PASS' = '${options.singlePass}')
      """.stripMargin

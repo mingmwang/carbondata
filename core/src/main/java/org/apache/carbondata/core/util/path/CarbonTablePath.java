@@ -33,42 +33,40 @@ import org.apache.hadoop.fs.Path;
  */
 public class CarbonTablePath extends Path {
 
-  protected static final String METADATA_DIR = "Metadata";
-  protected static final String DICTIONARY_EXT = ".dict";
-  protected static final String DICTIONARY_META_EXT = ".dictmeta";
-  protected static final String SORT_INDEX_EXT = ".sortindex";
-  protected static final String SCHEMA_FILE = "schema";
-  protected static final String TABLE_STATUS_FILE = "tablestatus";
-  protected static final String TABLE_UPDATE_STATUS_FILE = "tableupdatestatus";
-  protected static final String FACT_DIR = "Fact";
-  protected static final String SEGMENT_PREFIX = "Segment_";
-  protected static final String PARTITION_PREFIX = "Part";
-  protected static final String CARBON_DATA_EXT = ".carbondata";
-  protected static final String CARBON_DELTE_DELTA_EXT = ".deletedelta";
-  protected static final String CARBON_UPDATE_DELTA_EXT = ".updatedelta";
-  protected static final String DATA_PART_PREFIX = "part-";
-  protected static final String BATCH_PREFIX = "_batchno";
-  protected static final String INDEX_FILE_EXT = ".carbonindex";
-  protected static final String DELETE_DELTA_FILE_EXT = ".deletedelta";
+  private static final String METADATA_DIR = "Metadata";
+  private static final String DICTIONARY_EXT = ".dict";
+  private static final String DICTIONARY_META_EXT = ".dictmeta";
+  private static final String SORT_INDEX_EXT = ".sortindex";
+  private static final String SCHEMA_FILE = "schema";
+  private static final String TABLE_STATUS_FILE = "tablestatus";
+  private static final String FACT_DIR = "Fact";
+  private static final String SEGMENT_PREFIX = "Segment_";
+  private static final String PARTITION_PREFIX = "Part";
+  private static final String DATA_PART_PREFIX = "part-";
+  private static final String BATCH_PREFIX = "_batchno";
 
-  protected String tablePath;
-  protected CarbonTableIdentifier carbonTableIdentifier;
+  public static final String CARBON_DATA_EXT = ".carbondata";
+  public static final String INDEX_FILE_EXT = ".carbonindex";
+  public static final String MERGE_INDEX_FILE_EXT = ".carbonindexmerge";
+  public static final String PARTITION_MAP_EXT = ".partitionmap";
+
+  private static final String STREAMING_DIR = ".streaming";
+  private static final String STREAMING_LOG_DIR = "log";
+  private static final String STREAMING_CHECKPOINT_DIR = "checkpoint";
+
+  private String tablePath;
+  private CarbonTableIdentifier carbonTableIdentifier;
 
   /**
+   * structure CarbonTablePath object to manage table paths
    *
-   * @param carbonTableIdentifier
-   * @param tablePathString
+   * @param carbonTableIdentifier identifier of carbon table that the segment belong to
+   * @param tablePathString the store path of the segment
    */
   public CarbonTablePath(CarbonTableIdentifier carbonTableIdentifier, String tablePathString) {
     super(tablePathString);
     this.carbonTableIdentifier = carbonTableIdentifier;
     this.tablePath = tablePathString;
-  }
-
-  public CarbonTablePath(String storePath, String dbName, String tableName) {
-    super(storePath + File.separator + dbName + File.separator + tableName);
-    this.carbonTableIdentifier = new CarbonTableIdentifier(dbName, tableName, "");
-    this.tablePath = storePath + File.separator + dbName + File.separator + tableName;
   }
 
   /**
@@ -111,17 +109,14 @@ public class CarbonTablePath extends Path {
     }
     return false;
   }
+
   /**
-   * check if it is carbon data file matching extension
-   *
-   * @param fileNameWithPath
-   * @return boolean
+   * Return true if the fileNameWithPath ends with partition map file extension name
    */
-  public static boolean isCarbonDataFileOrUpdateFile(String fileNameWithPath) {
+  public static boolean isPartitionMapFile(String fileNameWithPath) {
     int pos = fileNameWithPath.lastIndexOf('.');
     if (pos != -1) {
-      return fileNameWithPath.substring(pos).startsWith(CARBON_DATA_EXT) || fileNameWithPath
-          .substring(pos).startsWith(CARBON_UPDATE_DELTA_EXT);
+      return fileNameWithPath.substring(pos).startsWith(PARTITION_MAP_EXT);
     }
     return false;
   }
@@ -156,11 +151,12 @@ public class CarbonTablePath extends Path {
   }
 
   /**
-   * @return it return relative directory
+   * @param dictionaryPath
+   * @param columnId unique column identifier
+   * @return absolute path of dictionary file
    */
-  public String getRelativeDictionaryDirectory() {
-    return carbonTableIdentifier.getDatabaseName() + File.separator + carbonTableIdentifier
-        .getTableName();
+  public String getDictionaryFilePath(String dictionaryPath, String columnId) {
+    return dictionaryPath + File.separator + getDictionaryFileName(columnId);
   }
 
   /**
@@ -173,11 +169,27 @@ public class CarbonTablePath extends Path {
   }
 
   /**
+   * Return metadata path based on `tablePath`
+   */
+  public static String getMetadataPath(String tablePath) {
+    return tablePath + File.separator + METADATA_DIR;
+  }
+
+  /**
    * @param columnId unique column identifier
    * @return absolute path of dictionary meta file
    */
   public String getDictionaryMetaFilePath(String columnId) {
     return getMetaDataDir() + File.separator + columnId + DICTIONARY_META_EXT;
+  }
+
+  /**
+   * @param dictionaryPath
+   * @param columnId unique column identifier
+   * @return absolute path of dictionary file
+   */
+  public String getDictionaryMetaFilePath(String dictionaryPath, String columnId) {
+    return dictionaryPath + File.separator + columnId + DICTIONARY_META_EXT;
   }
 
   /**
@@ -189,6 +201,15 @@ public class CarbonTablePath extends Path {
   }
 
   /**
+   * @param dictionaryPath
+   * @param columnId unique column identifier
+   * @return absolute path of dictionary file
+   */
+  public String getSortIndexFilePath(String dictionaryPath, String columnId) {
+    return dictionaryPath + File.separator + columnId + SORT_INDEX_EXT;
+  }
+
+  /**
    *
    * @param columnId
    * @param dictOffset
@@ -196,6 +217,16 @@ public class CarbonTablePath extends Path {
    */
   public String getSortIndexFilePath(String columnId, long dictOffset) {
     return getMetaDataDir() + File.separator + columnId + "_" + dictOffset + SORT_INDEX_EXT;
+  }
+
+  /**
+   * @param dictionaryPath
+   * @param columnId unique column identifier
+   * @param dictOffset
+   * @return absolute path of dictionary file
+   */
+  public String getSortIndexFilePath(String dictionaryPath, String columnId, long dictOffset) {
+    return dictionaryPath + File.separator + columnId + "_" + dictOffset + SORT_INDEX_EXT;
   }
 
   /**
@@ -222,13 +253,6 @@ public class CarbonTablePath extends Path {
   }
 
   /**
-   * @return absolute path of table update status file
-   */
-  public String getTableUpdateStatusFilePath() {
-    return getMetaDataDir() + File.separator + TABLE_UPDATE_STATUS_FILE;
-  }
-
-  /**
    * Gets absolute path of data file
    *
    * @param partitionId         unique partition identifier
@@ -238,7 +262,7 @@ public class CarbonTablePath extends Path {
    * @return absolute path of data file stored in carbon data format
    */
   public String getCarbonDataFilePath(String partitionId, String segmentId, Integer filePartNo,
-      Integer taskNo, int batchNo, int bucketNumber, String factUpdateTimeStamp) {
+      Long taskNo, int batchNo, int bucketNumber, String factUpdateTimeStamp) {
     return getSegmentDir(partitionId, segmentId) + File.separator + getCarbonDataFileName(
         filePartNo, taskNo, bucketNumber, batchNo, factUpdateTimeStamp);
   }
@@ -312,7 +336,7 @@ public class CarbonTablePath extends Path {
         return getCarbonIndexFilePath(taskId, partitionId, segmentId, bucketNumber);
       default:
         String segmentDir = getSegmentDir(partitionId, segmentId);
-        return segmentDir + File.separator + getCarbonIndexFileName(Integer.parseInt(taskId),
+        return segmentDir + File.separator + getCarbonIndexFileName(Long.parseLong(taskId),
             Integer.parseInt(bucketNumber), batchNo, timeStamp);
     }
   }
@@ -320,64 +344,6 @@ public class CarbonTablePath extends Path {
   private static String getCarbonIndexFileName(String taskNo, int bucketNumber,
       String factUpdatedtimeStamp) {
     return taskNo + "-" + bucketNumber + "-" + factUpdatedtimeStamp + INDEX_FILE_EXT;
-  }
-  /**
-   * Below method will be used to get the index file present in the segment folder
-   * based on task id
-   *
-   * @param taskId      task id of the file
-   * @param partitionId partition number
-   * @param segmentId   segment number
-   * @return full qualified carbon index path
-   */
-  public String getCarbonUpdatedIndexFilePath(final String taskId, final String partitionId,
-      final String segmentId) {
-    String segmentDir = getSegmentDir(partitionId, segmentId);
-    CarbonFile carbonFile =
-        FileFactory.getCarbonFile(segmentDir, FileFactory.getFileType(segmentDir));
-
-    CarbonFile[] files = carbonFile.listFiles(new CarbonFileFilter() {
-      @Override public boolean accept(CarbonFile file) {
-        return file.getName().startsWith(taskId) && file.getName().endsWith(INDEX_FILE_EXT);
-      }
-    });
-    if (files.length > 0) {
-      return files[0].getAbsolutePath();
-    } else {
-      throw new RuntimeException(
-          "Missing Carbon Updated index file for partition[" + partitionId
-              + "] Segment[" + segmentId + "], taskId[" + taskId + "]");
-    }
-  }
-
-  /**
-   * Below method will be used to get the index file present in the segment folder
-   * based on task id
-   *
-   * @param taskId      task id of the file
-   * @param partitionId partition number
-   * @param segmentId   segment number
-   * @return full qualified carbon index path
-   */
-  public String getCarbonDeleteDeltaFilePath(final String taskId, final String partitionId,
-      final String segmentId) {
-    String segmentDir = getSegmentDir(partitionId, segmentId);
-    CarbonFile carbonFile =
-        FileFactory.getCarbonFile(segmentDir, FileFactory.getFileType(segmentDir));
-
-    CarbonFile[] files = carbonFile.listFiles(new CarbonFileFilter() {
-      @Override public boolean accept(CarbonFile file) {
-        return file.getName().startsWith(taskId) && file.getName().endsWith(DELETE_DELTA_FILE_EXT);
-      }
-    });
-    if (files.length > 0) {
-      return files[0].getAbsolutePath();
-    } else {
-      throw new RuntimeException(
-          "Missing Carbon delete delta file index file for partition["
-              + partitionId + "] Segment[" + segmentId + "], taskId[" + taskId
-              + "]");
-    }
   }
 
   /**
@@ -399,7 +365,7 @@ public class CarbonTablePath extends Path {
    * @param factUpdateTimeStamp unique identifier to identify an update
    * @return gets data file name only with out path
    */
-  public static String getCarbonDataFileName(Integer filePartNo, Integer taskNo, int bucketNumber,
+  public static String getCarbonDataFileName(Integer filePartNo, Long taskNo, int bucketNumber,
       int batchNo, String factUpdateTimeStamp) {
     return DATA_PART_PREFIX + filePartNo + "-" + taskNo + BATCH_PREFIX + batchNo + "-"
         + bucketNumber + "-" + factUpdateTimeStamp + CARBON_DATA_EXT;
@@ -412,25 +378,21 @@ public class CarbonTablePath extends Path {
    * @param factUpdatedTimeStamp time stamp
    * @return filename
    */
-  public static String getCarbonIndexFileName(int taskNo, int bucketNumber, int batchNo,
+  public static String getCarbonIndexFileName(long taskNo, int bucketNumber, int batchNo,
       String factUpdatedTimeStamp) {
     return taskNo + BATCH_PREFIX + batchNo + "-" + bucketNumber + "-" + factUpdatedTimeStamp
         + INDEX_FILE_EXT;
   }
 
-  /**
-   * Below method will be used to get the carbon index filename
-   *
-   * @param taskNo               task number
-   * @param factUpdatedTimeStamp time stamp
-   * @return filename
-   */
-  public String getCarbonIndexFileName(int taskNo, String factUpdatedTimeStamp,
-      String indexFileExtension) {
-    return taskNo + "-" + factUpdatedTimeStamp + indexFileExtension;
+  public static String getCarbonStreamIndexFileName() {
+    return getCarbonIndexFileName(0, 0, 0, "0");
   }
 
-  private String getSegmentDir(String partitionId, String segmentId) {
+  public static String getCarbonStreamIndexFilePath(String segmentDir) {
+    return segmentDir + File.separator + getCarbonStreamIndexFileName();
+  }
+
+  public String getSegmentDir(String partitionId, String segmentId) {
     return getPartitionDir(partitionId) + File.separator + SEGMENT_PREFIX + segmentId;
   }
 
@@ -444,6 +406,14 @@ public class CarbonTablePath extends Path {
 
   public String getFactDir() {
     return tablePath + File.separator + FACT_DIR;
+  }
+
+  public String getStreamingLogDir() {
+    return tablePath + File.separator + STREAMING_DIR + File.separator + STREAMING_LOG_DIR;
+  }
+
+  public String getStreamingCheckpointDir() {
+    return tablePath + File.separator + STREAMING_DIR + File.separator + STREAMING_CHECKPOINT_DIR;
   }
 
   public CarbonTableIdentifier getCarbonTableIdentifier() {
@@ -547,8 +517,8 @@ public class CarbonTablePath extends Path {
      * @param taskNo
      * @return
      */
-    public static int getTaskIdFromTaskNo(String taskNo) {
-      return Integer.parseInt(taskNo.split(BATCH_PREFIX)[0]);
+    public static long getTaskIdFromTaskNo(String taskNo) {
+      return Long.parseLong(taskNo.split(BATCH_PREFIX)[0]);
     }
 
     public static int getBatchNoFromTaskNo(String taskNo) {
@@ -565,21 +535,6 @@ public class CarbonTablePath extends Path {
       } else {
         return carbonDataFileName;
       }
-    }
-
-    /**
-     * Gets the file name of the delta files.
-     *
-     * @param filePartNo
-     * @param taskNo
-     * @param factUpdateTimeStamp
-     * @param Extension
-     * @return
-     */
-    public static String getCarbonDeltaFileName(String filePartNo, String taskNo,
-        String factUpdateTimeStamp, String Extension) {
-      return DATA_PART_PREFIX + filePartNo + "-" + taskNo + "-" + factUpdateTimeStamp
-          + Extension;
     }
   }
 
@@ -620,7 +575,8 @@ public class CarbonTablePath extends Path {
    * @param columnUniqueId   columnunique id
    * @return sort index carbon files
    */
-  public CarbonFile[] getSortIndexFiles(CarbonFile sortIndexDir, final String columnUniqueId) {
+  public static CarbonFile[] getSortIndexFiles(CarbonFile sortIndexDir,
+      final String columnUniqueId) {
     return sortIndexDir.listFiles(new CarbonFileFilter() {
       @Override public boolean accept(CarbonFile file) {
         return file.getName().startsWith(columnUniqueId) && file.getName().endsWith(SORT_INDEX_EXT);
@@ -661,6 +617,14 @@ public class CarbonTablePath extends Path {
    */
   public static String getCarbonIndexExtension() {
     return INDEX_FILE_EXT;
+  }
+
+  /**
+   *
+   * @return carbon index merge file extension
+   */
+  public static String getCarbonMergeIndexExtension() {
+    return MERGE_INDEX_FILE_EXT;
   }
 
   /**
@@ -737,5 +701,12 @@ public class CarbonTablePath extends Path {
   public static String getCarbonIndexFileName(String actualBlockName) {
     return DataFileUtil.getTaskNo(actualBlockName) + "-" + DataFileUtil.getBucketNo(actualBlockName)
         + "-" + DataFileUtil.getTimeStampFromFileName(actualBlockName) + INDEX_FILE_EXT;
+  }
+
+  /**
+   * Get the segment path from table path and segmentid
+   */
+  public static String getSegmentPath(String tablePath, String segmentId) {
+    return tablePath + "/Fact/Part0/Segment_" + segmentId;
   }
 }

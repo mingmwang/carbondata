@@ -18,33 +18,33 @@
 package org.apache.carbondata.api
 
 import java.lang.Long
-import java.text.SimpleDateFormat
 
 import scala.collection.JavaConverters._
 
 import org.apache.spark.sql.Row
-import org.apache.spark.sql.catalyst.expressions.{Cast, Literal}
-import org.apache.spark.sql.types.TimestampType
+import org.apache.spark.sql.catalyst.util.DateTimeUtils
+import org.apache.spark.sql.util.CarbonException
+import org.apache.spark.unsafe.types.UTF8String
 
 import org.apache.carbondata.common.logging.LogServiceFactory
 import org.apache.carbondata.core.constants.CarbonCommonConstants
-import org.apache.carbondata.core.metadata.{AbsoluteTableIdentifier, CarbonMetadata}
+import org.apache.carbondata.core.datastore.impl.FileFactory
+import org.apache.carbondata.core.locks.{CarbonLockUtil, ICarbonLock, LockUsage}
+import org.apache.carbondata.core.metadata.{AbsoluteTableIdentifier, PartitionMapFileStore}
 import org.apache.carbondata.core.metadata.schema.table.CarbonTable
+import org.apache.carbondata.core.mutate.CarbonUpdateUtil
 import org.apache.carbondata.core.statusmanager.SegmentStatusManager
 import org.apache.carbondata.spark.exception.MalformedCarbonCommandException
-import org.apache.carbondata.spark.rdd.DataManagementFunc
+import org.apache.carbondata.spark.util.DataLoadingUtil
 
 object CarbonStore {
   private val LOGGER = LogServiceFactory.getLogService(this.getClass.getCanonicalName)
 
   def showSegments(
-      dbName: String,
-      tableName: String,
       limit: Option[String],
       tableFolderPath: String): Seq[Row] = {
     val loadMetadataDetailsArray = SegmentStatusManager.readLoadMetadata(tableFolderPath)
     if (loadMetadataDetailsArray.nonEmpty) {
-      val parser = new SimpleDateFormat(CarbonCommonConstants.CARBON_TIMESTAMP)
       var loadMetadataDetailsSortedArray = loadMetadataDetailsArray.sortWith { (l1, l2) =>
         java.lang.Double.parseDouble(l1.getLoadName) > java.lang.Double.parseDouble(l2.getLoadName)
       }
@@ -56,20 +56,43 @@ object CarbonStore {
           val lim = Integer.parseInt(limitLoads)
           loadMetadataDetailsSortedArray = loadMetadataDetailsSortedArray.slice(0, lim)
         } catch {
-          case _: NumberFormatException => sys.error(s" Entered limit is not a valid Number")
+          case _: NumberFormatException =>
+            CarbonException.analysisException("Entered limit is not a valid Number")
         }
       }
 
       loadMetadataDetailsSortedArray
-          .filter(_.getVisibility.equalsIgnoreCase("true"))
-          .map { load =>
-            Row(
-              load.getLoadName,
-              load.getLoadStatus,
-              new java.sql.Timestamp(load.getLoadStartTime),
+        .filter(_.getVisibility.equalsIgnoreCase("true"))
+        .map { load =>
+          val mergedTo =
+            if (load.getMergedLoadName != null) {
+              load.getMergedLoadName
+            } else {
+              "NA"
+            }
+
+          val startTime =
+            if (load.getLoadStartTime == CarbonCommonConstants.SEGMENT_LOAD_TIME_DEFAULT) {
+              null
+            } else {
+              new java.sql.Timestamp(load.getLoadStartTime)
+            }
+
+          val endTime =
+            if (load.getLoadEndTime == CarbonCommonConstants.SEGMENT_LOAD_TIME_DEFAULT) {
+              null
+            } else {
               new java.sql.Timestamp(load.getLoadEndTime)
-            )
-          }.toSeq
+            }
+
+          Row(
+            load.getLoadName,
+            load.getSegmentStatus.getMessage,
+            startTime,
+            endTime,
+            mergedTo,
+            load.getFileFormat.toString)
+        }.toSeq
     } else {
       Seq.empty
     }
@@ -79,16 +102,45 @@ object CarbonStore {
       dbName: String,
       tableName: String,
       storePath: String,
-      carbonTable: CarbonTable, forceTableClean: Boolean): Unit = {
+      carbonTable: CarbonTable,
+      forceTableClean: Boolean,
+      currentTablePartitions: Option[Seq[String]] = None): Unit = {
     LOGGER.audit(s"The clean files request has been received for $dbName.$tableName")
-    try {
-      DataManagementFunc.cleanFiles(dbName, tableName, storePath, carbonTable, forceTableClean)
-      LOGGER.audit(s"Clean files operation is success for $dbName.$tableName.")
-    } catch {
-      case ex: Exception =>
-        sys.error(ex.getMessage)
+    var carbonCleanFilesLock: ICarbonLock = null
+    var absoluteTableIdentifier: AbsoluteTableIdentifier = null
+    if (forceTableClean) {
+      absoluteTableIdentifier = AbsoluteTableIdentifier.from(storePath, dbName, tableName)
+    } else {
+      absoluteTableIdentifier = carbonTable.getAbsoluteTableIdentifier
     }
-    Seq.empty
+    try {
+      val errorMsg = "Clean files request is failed for " +
+                     s"$dbName.$tableName" +
+                     ". Not able to acquire the clean files lock due to another clean files " +
+                     "operation is running in the background."
+      carbonCleanFilesLock =
+        CarbonLockUtil.getLockObject(absoluteTableIdentifier, LockUsage.CLEAN_FILES_LOCK, errorMsg)
+      if (forceTableClean) {
+        val absIdent = AbsoluteTableIdentifier.from(storePath, dbName, tableName)
+        FileFactory.deleteAllCarbonFilesOfDir(
+          FileFactory.getCarbonFile(absIdent.getTablePath,
+            FileFactory.getFileType(absIdent.getTablePath)))
+      } else {
+        DataLoadingUtil.deleteLoadsAndUpdateMetadata(
+          isForceDeletion = true, carbonTable)
+        CarbonUpdateUtil.cleanUpDeltaFiles(carbonTable, true)
+        currentTablePartitions match {
+          case Some(partitions) =>
+            new PartitionMapFileStore().cleanSegments(carbonTable, partitions.asJava, true)
+          case _ =>
+        }
+      }
+    } finally {
+      if (carbonCleanFilesLock != null) {
+        CarbonLockUtil.fileUnlock(carbonCleanFilesLock, LockUsage.CLEAN_FILES_LOCK)
+      }
+    }
+    LOGGER.audit(s"Clean files operation is success for $dbName.$tableName.")
   }
 
   // validates load ids
@@ -99,6 +151,7 @@ object CarbonStore {
     }
   }
 
+  // TODO: move dbName and tableName to caller, caller should handle the log and error
   def deleteLoadById(
       loadids: Seq[String],
       dbName: String,
@@ -125,6 +178,7 @@ object CarbonStore {
     Seq.empty
   }
 
+  // TODO: move dbName and tableName to caller, caller should handle the log and error
   def deleteLoadByDate(
       timestamp: String,
       dbName: String,
@@ -163,16 +217,17 @@ object CarbonStore {
     val validAndInvalidSegments: SegmentStatusManager.ValidAndInvalidSegmentsInfo = new
         SegmentStatusManager(
           identifier).getValidAndInvalidSegments
-    return validAndInvalidSegments.getValidSegments.contains(segmentId)
+    validAndInvalidSegments.getValidSegments.contains(segmentId)
   }
 
   private def validateTimeFormat(timestamp: String): Long = {
-    val timeObj = Cast(Literal(timestamp), TimestampType).eval()
-    if (null == timeObj) {
-      val errorMessage = "Error: Invalid load start time format: " + timestamp
-      throw new MalformedCarbonCommandException(errorMessage)
+    try {
+      DateTimeUtils.stringToTimestamp(UTF8String.fromString(timestamp)).get
+    } catch {
+      case e: Exception =>
+        val errorMessage = "Error: Invalid load start time format: " + timestamp
+        throw new MalformedCarbonCommandException(errorMessage)
     }
-    timeObj.asInstanceOf[Long]
   }
 
 }

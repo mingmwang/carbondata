@@ -70,6 +70,9 @@ public class DictionaryBasedVectorResultCollector extends AbstractScannedResultC
     List<ColumnVectorInfo> complexList = new ArrayList<>();
     List<ColumnVectorInfo> implictColumnList = new ArrayList<>();
     for (int i = 0; i < queryDimensions.length; i++) {
+      if (!dimensionInfo.getDimensionExists()[i]) {
+        continue;
+      }
       if (queryDimensions[i].getDimension().hasEncoding(Encoding.IMPLICIT)) {
         ColumnVectorInfo columnVectorInfo = new ColumnVectorInfo();
         implictColumnList.add(columnVectorInfo);
@@ -178,6 +181,10 @@ public class DictionaryBasedVectorResultCollector extends AbstractScannedResultC
       allColumnInfo[i].offset = rowCounter;
       allColumnInfo[i].vectorOffset = columnarBatch.getRowCounter();
       allColumnInfo[i].vector = columnarBatch.columnVectors[i];
+      if (null != allColumnInfo[i].dimension) {
+        allColumnInfo[i].vector
+            .setBlockDataType(allColumnInfo[i].dimension.getDimension().getDataType());
+      }
     }
   }
 

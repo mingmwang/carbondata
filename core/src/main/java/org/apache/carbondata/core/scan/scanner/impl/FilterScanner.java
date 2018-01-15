@@ -64,6 +64,8 @@ public class FilterScanner extends AbstractBlockletScanner {
 
   private QueryStatisticsModel queryStatisticsModel;
 
+  private boolean useBitSetPipeLine;
+
   public FilterScanner(BlockExecutionInfo blockExecutionInfo,
       QueryStatisticsModel queryStatisticsModel) {
     super(blockExecutionInfo);
@@ -77,6 +79,13 @@ public class FilterScanner extends AbstractBlockletScanner {
     // get the filter tree
     this.filterExecuter = blockExecutionInfo.getFilterExecuterTree();
     this.queryStatisticsModel = queryStatisticsModel;
+
+    String useBitSetPipeLine = CarbonProperties.getInstance()
+        .getProperty(CarbonCommonConstants.BITSET_PIPE_LINE,
+            CarbonCommonConstants.BITSET_PIPE_LINE_DEFAULT);
+    if (null != useBitSetPipeLine) {
+      this.useBitSetPipeLine = Boolean.parseBoolean(useBitSetPipeLine);
+    }
   }
 
   /**
@@ -87,8 +96,7 @@ public class FilterScanner extends AbstractBlockletScanner {
    */
   @Override public AbstractScannedResult scanBlocklet(BlocksChunkHolder blocksChunkHolder)
       throws IOException, FilterUnsupportedException {
-    AbstractScannedResult result = fillScannedResult(blocksChunkHolder);
-    return result;
+    return fillScannedResult(blocksChunkHolder);
   }
 
   @Override public boolean isScanRequired(BlocksChunkHolder blocksChunkHolder) throws IOException {
@@ -145,7 +153,7 @@ public class FilterScanner extends AbstractBlockletScanner {
     totalBlockletStatistic.addCountStatistic(QueryStatisticsConstants.TOTAL_BLOCKLET_NUM,
         totalBlockletStatistic.getCount() + 1);
     // apply filter on actual data
-    BitSetGroup bitSetGroup = this.filterExecuter.applyFilter(blocksChunkHolder);
+    BitSetGroup bitSetGroup = this.filterExecuter.applyFilter(blocksChunkHolder, useBitSetPipeLine);
     // if indexes is empty then return with empty result
     if (bitSetGroup.isEmpty()) {
       CarbonUtil.freeMemory(blocksChunkHolder.getDimensionRawDataChunk(),
@@ -166,7 +174,7 @@ public class FilterScanner extends AbstractBlockletScanner {
     AbstractScannedResult scannedResult = new FilterQueryScannedResult(blockExecutionInfo);
     scannedResult.setBlockletId(
         blockExecutionInfo.getBlockId() + CarbonCommonConstants.FILE_SEPARATOR + blocksChunkHolder
-            .getDataBlock().nodeNumber());
+            .getDataBlock().blockletId());
     // valid scanned blocklet
     QueryStatistic validScannedBlockletStatistic = queryStatisticsModel.getStatisticsTypeAndObjMap()
         .get(QueryStatisticsConstants.VALID_SCAN_BLOCKLET_NUM);

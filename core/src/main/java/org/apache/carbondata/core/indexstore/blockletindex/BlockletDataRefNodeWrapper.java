@@ -20,6 +20,7 @@ import java.io.IOException;
 import java.util.List;
 
 import org.apache.carbondata.core.cache.update.BlockletLevelDeleteDeltaDataCache;
+import org.apache.carbondata.core.constants.CarbonV3DataFormatConstants;
 import org.apache.carbondata.core.datastore.DataRefNode;
 import org.apache.carbondata.core.datastore.FileHolder;
 import org.apache.carbondata.core.datastore.block.TableBlockInfo;
@@ -28,6 +29,7 @@ import org.apache.carbondata.core.datastore.chunk.impl.MeasureRawColumnChunk;
 import org.apache.carbondata.core.datastore.chunk.reader.CarbonDataReaderFactory;
 import org.apache.carbondata.core.datastore.chunk.reader.DimensionColumnChunkReader;
 import org.apache.carbondata.core.datastore.chunk.reader.MeasureColumnChunkReader;
+import org.apache.carbondata.core.indexstore.BlockletDetailInfo;
 import org.apache.carbondata.core.metadata.ColumnarFormatVersion;
 
 /**
@@ -46,6 +48,26 @@ public class BlockletDataRefNodeWrapper implements DataRefNode {
   public BlockletDataRefNodeWrapper(List<TableBlockInfo> blockInfos, int index,
       int[] dimensionLens) {
     this.blockInfos = blockInfos;
+    // Update row count and page count to blocklet info
+    for (TableBlockInfo blockInfo : blockInfos) {
+      BlockletDetailInfo detailInfo = blockInfo.getDetailInfo();
+      detailInfo.getBlockletInfo().setNumberOfRows(detailInfo.getRowCount());
+      detailInfo.getBlockletInfo().setNumberOfPages(detailInfo.getPagesCount());
+      detailInfo.setBlockletId(blockInfo.getDetailInfo().getBlockletId());
+      int[] pageRowCount = new int[detailInfo.getPagesCount()];
+      int numberOfPagesCompletelyFilled = detailInfo.getRowCount()
+          / CarbonV3DataFormatConstants.NUMBER_OF_ROWS_PER_BLOCKLET_COLUMN_PAGE_DEFAULT;
+      int lastPageRowCount = detailInfo.getRowCount()
+          % CarbonV3DataFormatConstants.NUMBER_OF_ROWS_PER_BLOCKLET_COLUMN_PAGE_DEFAULT;
+      for (int i = 0; i < numberOfPagesCompletelyFilled; i++) {
+        pageRowCount[i] =
+            CarbonV3DataFormatConstants.NUMBER_OF_ROWS_PER_BLOCKLET_COLUMN_PAGE_DEFAULT;
+      }
+      if (lastPageRowCount > 0) {
+        pageRowCount[pageRowCount.length - 1] = lastPageRowCount;
+      }
+      detailInfo.getBlockletInfo().setNumberOfRowsPerPage(pageRowCount);
+    }
     this.index = index;
     this.dimensionLens = dimensionLens;
   }
@@ -63,6 +85,10 @@ public class BlockletDataRefNodeWrapper implements DataRefNode {
 
   @Override public long nodeNumber() {
     return index;
+  }
+
+  @Override public String blockletId() {
+    return blockInfos.get(index).getDetailInfo().getBlockletId().toString();
   }
 
   @Override public byte[][] getColumnsMaxValue() {
@@ -103,11 +129,11 @@ public class BlockletDataRefNodeWrapper implements DataRefNode {
   private DimensionColumnChunkReader getDimensionColumnChunkReader() throws IOException {
     ColumnarFormatVersion version =
         ColumnarFormatVersion.valueOf(blockInfos.get(index).getDetailInfo().getVersionNumber());
-    DimensionColumnChunkReader dimensionColumnChunkReader = CarbonDataReaderFactory.getInstance()
-        .getDimensionColumnChunkReader(version,
-            blockInfos.get(index).getDetailInfo().getBlockletInfo(), dimensionLens,
-            blockInfos.get(index).getFilePath());
-    return dimensionColumnChunkReader;
+    return CarbonDataReaderFactory.getInstance().getDimensionColumnChunkReader(
+        version,
+        blockInfos.get(index).getDetailInfo().getBlockletInfo(),
+        dimensionLens,
+        blockInfos.get(index).getFilePath());
   }
 
   private MeasureColumnChunkReader getMeasureColumnChunkReader() throws IOException {
@@ -131,7 +157,16 @@ public class BlockletDataRefNodeWrapper implements DataRefNode {
     return blockInfos.get(index).getDetailInfo().getPagesCount();
   }
 
+  @Override public int getPageRowCount(int pageNumber) {
+    return blockInfos.get(index).getDetailInfo().getBlockletInfo()
+        .getNumberOfRowsPerPage()[pageNumber];
+  }
+
   public int numberOfNodes() {
     return blockInfos.size();
+  }
+
+  public List<TableBlockInfo> getBlockInfos() {
+    return blockInfos;
   }
 }

@@ -20,7 +20,8 @@ package org.apache.carbondata.spark.testsuite.dataretention
 import java.util
 import java.util.concurrent.{Callable, Executors}
 
-import org.scalatest.BeforeAndAfterAll
+import org.scalatest.{BeforeAndAfterAll, Ignore}
+
 import org.apache.carbondata.core.constants.CarbonCommonConstants
 import org.apache.carbondata.core.util.CarbonProperties
 import org.apache.spark.sql.test.util.QueryTest
@@ -33,7 +34,7 @@ class DataRetentionConcurrencyTestCase extends QueryTest with BeforeAndAfterAll 
   private val executorService = Executors.newFixedThreadPool(10)
 
   override def beforeAll {
-    CarbonProperties.getInstance().addProperty(CarbonCommonConstants.MAX_TIMEOUT_FOR_LOAD_METADATA_LOCK, "1")
+    CarbonProperties.getInstance().addProperty(CarbonCommonConstants.MAX_TIMEOUT_FOR_CONCURRENT_LOCK, "1")
     sql("drop table if exists concurrent")
     sql(
       "create table concurrent (ID int, date String, country String, name " +
@@ -51,7 +52,7 @@ class DataRetentionConcurrencyTestCase extends QueryTest with BeforeAndAfterAll 
     sql("drop table if exists concurrent")
   }
 
-  test("DataRetention_Concurrency_load_id") {
+  ignore("DataRetention_Concurrency_load_id") {
 
     val tasks = new util.ArrayList[Callable[String]]()
     tasks
@@ -92,7 +93,8 @@ class DataRetentionConcurrencyTestCase extends QueryTest with BeforeAndAfterAll 
         LOGGER.info("Executing :" + Thread.currentThread().getName)
         sql(query)
       } catch {
-        case _: Exception =>
+        case ex: Exception =>
+          ex.printStackTrace()
           result = "FAIL"
       }
       result
